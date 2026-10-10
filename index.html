@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Maikol DS</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --text: #1d2129;
+    --muted: #5f6673;
+    --border: #d9dce3;
+    --accent: #2f6fde;
+    --accent-text: #ffffff;
+    --drop: #eaf1ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121418;
+      --panel: #1b1e24;
+      --text: #e8eaee;
+      --muted: #9aa1ad;
+      --border: #2e333c;
+      --accent: #5b8ff0;
+      --accent-text: #0b0d10;
+      --drop: #1d2a42;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #menu {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 32px 16px;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  #drop {
+    display: block;
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  #drop.over { background: var(--drop); border-color: var(--accent); }
+  #drop strong { display: block; font-size: 18px; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: 14px; }
+  #rom { display: none; }
+  label.row { display: flex; gap: 12px; align-items: center; margin-top: 16px; white-space: nowrap; }
+  label.row select { min-width: 0; }
+  select {
+    flex: 1;
+    font: inherit;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+  }
+  #error { color: #d64545; margin-top: 12px; display: none; }
+  details { color: var(--muted); font-size: 14px; }
+  details summary { cursor: pointer; color: var(--text); }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  td { padding: 4px 0; border-bottom: 1px solid var(--border); }
+  td:first-child { color: var(--text); width: 45%; }
+  kbd {
+    font: 13px ui-monospace, monospace;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  #game-wrap { display: none; width: 100vw; height: 100vh; height: 100dvh; background: #000; }
+  #game { width: 100%; height: 100%; }
+  body.playing #menu { display: none; }
+  body.playing #game-wrap { display: block; }
+</style>
+</head>
+<body>
+<main id="menu">
+  <h1>Maikol DS</h1>
+  <p class="sub">Nintendo DS in je browser. Kies een eigen ROM-bestand om te beginnen.</p>
+
+  <section class="panel">
+    <label id="drop" for="rom">
+      <strong>Sleep een .nds-bestand hierheen</strong>
+      <span>of klik om te kiezen (.nds, .zip of .7z)</span>
+    </label>
+    <input id="rom" type="file" accept=".nds,.zip,.7z,.srl">
+
+    <label class="row">
+      Emulator-core
+      <select id="core">
+        <option value="melonds">melonDS (nauwkeuriger, aanbevolen)</option>
+        <option value="desmume">DeSmuME (soms sneller op zwakke apparaten)</option>
+      </select>
+    </label>
+    <div id="error"></div>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Besturing (toetsenbord)</summary>
+      <table>
+        <tr><td>D-pad</td><td>Pijltjestoetsen</td></tr>
+        <tr><td>A / B</td><td><kbd>Z</kbd> / <kbd>X</kbd></td></tr>
+        <tr><td>X / Y</td><td><kbd>A</kbd> / <kbd>S</kbd></td></tr>
+        <tr><td>L / R</td><td><kbd>Q</kbd> / <kbd>E</kbd></td></tr>
+        <tr><td>Start / Select</td><td><kbd>Enter</kbd> / <kbd>V</kbd></td></tr>
+        <tr><td>Touchscreen</td><td>Klik of tik op het onderste scherm</td></tr>
+      </table>
+      <p>Toetsen aanpassen, savestates, fullscreen en een gamepad koppelen kan via het menu onderin het spelscherm. Op telefoon en tablet verschijnen knoppen op het scherm.</p>
+    </details>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Opslaan</summary>
+      <p>In-game saves en savestates worden in je browser bewaard (IndexedDB), per spel. Wis je de sitegegevens, dan ben je ze kwijt — exporteer ze via het menu als je zeker wilt zijn.</p>
+    </details>
+  </section>
+</main>
+
+<div id="game-wrap"><div id="game"></div></div>
+
+<script>
+(function () {
+  const input = document.getElementById("rom");
+  const drop = document.getElementById("drop");
+  const coreSelect = document.getElementById("core");
+  const errorBox = document.getElementById("error");
+  const VALID = /\.(nds|srl|zip|7z)$/i;
+
+  try {
+    const saved = localStorage.getItem("maikol-ds-core");
+    if (saved) coreSelect.value = saved;
+  } catch (e) {}
+  coreSelect.addEventListener("change", () => {
+    try { localStorage.setItem("maikol-ds-core", coreSelect.value); } catch (e) {}
+  });
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = "block";
+  }
+
+  function start(file) {
+    if (!file) return;
+    if (!VALID.test(file.name)) {
+      showError("Dit lijkt geen DS-ROM. Kies een .nds-, .zip- of .7z-bestand.");
+      return;
+    }
+    if (!window.isSecureContext && location.protocol === "file:") {
+      showError("Open deze pagina via een webserver (zie README), niet direct als bestand.");
+      return;
+    }
+
+    window.EJS_player = "#game";
+    window.EJS_core = coreSelect.value;
+    window.EJS_gameUrl = file;
+    window.EJS_gameName = file.name.replace(/\.[^.]+$/, "");
+    window.EJS_pathtodata = "emulator/";
+    window.EJS_startOnLoaded = true;
+    window.EJS_color = "#2f6fde";
+    window.EJS_threads = false;
+    // The npm build ships unminified sources only; this makes loader.js load them directly.
+    window.EJS_DEBUG_XX = true;
+
+    document.body.classList.add("playing");
+    document.title = window.EJS_gameName + " — Maikol DS";
+
+    const s = document.createElement("script");
+    s.src = "emulator/loader.js";
+    document.body.appendChild(s);
+  }
+
+  input.addEventListener("change", () => start(input.files[0]));
+  ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault();
+    drop.classList.add("over");
+  }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault();
+    drop.classList.remove("over");
+  }));
+  drop.addEventListener("drop", e => start(e.dataTransfer.files[0]));
+})();
+</script>
+</body>
+</html>
