@@ -17,9 +17,20 @@ python3 -m http.server 8000
 
 Open daarna <http://localhost:8000> en kies of sleep een `.nds`-bestand (ook `.zip`/`.7z`).
 
-Online zetten kan ook: zet GitHub Pages aan op deze branch (Settings → Pages), dan speel je
-vanaf elk apparaat via `https://<gebruiker>.github.io/<repo>/`. Je ROM wordt nooit geüpload;
-die blijft lokaal in je browser.
+## Op je telefoon
+
+1. Zet GitHub Pages aan: repo → **Settings → Pages** → *Source: Deploy from a branch* →
+   branch `claude/nds-emulator-d9rdm7`, map `/ (root)` → **Save**. Na een minuut of twee staat
+   de site op <https://poenanispeed.github.io/maikol/>.
+2. Open die link op je telefoon en kies **Toevoegen aan beginscherm** (Android: menu ⋮,
+   iPhone: deelknop). Dan start hij als app op volledig scherm, en bewaart iOS je saves
+   betrouwbaarder dan in een gewoon Safari-tabblad.
+3. Zet je ROM-bestanden op je telefoon (bijv. in Downloads/Bestanden) en kies ze in de app.
+
+Je ROM wordt nooit geüpload; die blijft lokaal in je browser.
+
+Op de telefoon tik je met je vinger op het onderste scherm; de knoppen staan eronder
+(L/R naast Select/Start, zodat ze het touchscreen niet afdekken).
 
 ## ROMs en BIOS
 
@@ -39,6 +50,10 @@ die blijft lokaal in je browser.
 | Start / Select | `Enter` / `V` |
 | Touchscreen | muis / vinger op onderste scherm |
 
+De ronde knop linksboven in het spel wisselt de snelheid: **1x → 2x → 4x → 1x**. Dat is een
+maximum: haalt je apparaat het niet, dan loopt het spel zo snel als het kan. Vooral melonDS
+op een telefoon haalt 4x meestal niet; DeSmuME is lichter.
+
 Toetsen aanpassen, gamepad, savestates, fullscreen en schermindeling zitten in het menu
 onderin het spelscherm.
 
@@ -50,8 +65,9 @@ wissen = saves kwijt. Exporteer ze via het menu als backup.
 ## Onderhoud
 
 - `tools/update-emulatorjs.sh [versie]` — haalt EmulatorJS en de cores opnieuw op van npm.
-- `tools/make-test-rom.py` — bouwt een mini homebrew-ROM (rood scherm, groen als je A
-  ingedrukt houdt) om te testen of emulatie en input werken.
+- `tools/make-test-rom.py` — bouwt een mini homebrew-ROM om emulatie te testen: rood
+  scherm, groen bij A, blauw bij aanraken van het touchscreen, plus een frameteller
+  bovenin om de snelheid te meten.
 
 ## Licentie
 

@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Maikol DS</title>
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Maikol DS">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
   :root {
     --bg: #f4f5f7;
@@ -88,6 +96,26 @@
   #game { width: 100%; height: 100%; }
   body.playing #menu { display: none; }
   body.playing #game-wrap { display: block; }
+  #speed {
+    display: none;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    left: calc(env(safe-area-inset-left, 0px) + 8px);
+    z-index: 10000;
+    min-width: 48px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, .55);
+    border-radius: 18px;
+    background: rgba(0, 0, 0, .45);
+    color: #fff;
+    font: 600 16px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #speed.fast { background: rgba(47, 111, 222, .85); border-color: transparent; }
+  body.started #speed { display: block; }
 </style>
 </head>
 <body>
@@ -97,10 +125,11 @@
 
   <section class="panel">
     <label id="drop" for="rom">
-      <strong>Sleep een .nds-bestand hierheen</strong>
-      <span>of klik om te kiezen (.nds, .zip of .7z)</span>
+      <strong>Kies een ROM-bestand</strong>
+      <span>of sleep het hierheen (.nds, .zip of .7z)</span>
     </label>
-    <input id="rom" type="file" accept=".nds,.zip,.7z,.srl">
+    <!-- No accept filter: iOS and some Android pickers grey out unknown extensions like .nds. -->
+    <input id="rom" type="file">
 
     <label class="row">
       Emulator-core
@@ -123,7 +152,8 @@
         <tr><td>Start / Select</td><td><kbd>Enter</kbd> / <kbd>V</kbd></td></tr>
         <tr><td>Touchscreen</td><td>Klik of tik op het onderste scherm</td></tr>
       </table>
-      <p>Toetsen aanpassen, savestates, fullscreen en een gamepad koppelen kan via het menu onderin het spelscherm. Op telefoon en tablet verschijnen knoppen op het scherm.</p>
+      <p>De knop linksboven in het spel wisselt de snelheid: 1x → 2x → 4x → 1x.</p>
+      <p>Toetsen aanpassen, savestates, fullscreen en een gamepad koppelen kan via het menu in het spelscherm. Op telefoon en tablet verschijnen knoppen op het scherm en tik je met je vinger op het onderste scherm.</p>
     </details>
   </section>
 
@@ -136,6 +166,7 @@
 </main>
 
 <div id="game-wrap"><div id="game"></div></div>
+<button id="speed" type="button" aria-label="Spelsnelheid">1x</button>
 
 <script>
 (function () {
@@ -144,6 +175,89 @@
   const coreSelect = document.getElementById("core");
   const errorBox = document.getElementById("error");
   const VALID = /\.(nds|srl|zip|7z)$/i;
+  const SPEEDS = [1, 2, 4];
+  const speedBtn = document.getElementById("speed");
+  let speedIndex = 0;
+
+  // EmulatorJS's default DS layout minus its Fast/Slow buttons (the speed button
+  // replaces them), with L/R moved from the touchscreen to the row of Select/Start.
+  const PHONE_LAYOUT = [
+    { type: "button", text: "X", id: "x", location: "right", left: 40, bold: true, input_value: 9 },
+    { type: "button", text: "Y", id: "y", location: "right", top: 40, bold: true, input_value: 1 },
+    { type: "button", text: "A", id: "a", location: "right", left: 81, top: 40, bold: true, input_value: 8 },
+    { type: "button", text: "B", id: "b", location: "right", left: 40, top: 80, bold: true, input_value: 0 },
+    { type: "dpad", id: "dpad", location: "left", left: "50%", top: "50%", joystickInput: false, inputValues: [4, 5, 6, 7] },
+    { type: "button", text: "Start", id: "start", location: "center", left: 60, fontSize: 15, block: true, input_value: 3 },
+    { type: "button", text: "Select", id: "select", location: "center", left: -5, fontSize: 15, block: true, input_value: 2 },
+    { type: "button", text: "L", id: "l", location: "left", left: 3, top: 135, bold: true, block: true, input_value: 10 },
+    { type: "button", text: "R", id: "r", location: "right", right: 3, top: 140, bold: true, block: true, input_value: 11 }
+  ];
+
+  function applySpeed() {
+    const emu = window.EJS_emulator;
+    const gm = emu && emu.gameManager;
+    if (!gm) return;
+    const speed = SPEEDS[speedIndex];
+    // Same sequence as EmulatorJS's own ff-ratio setting: stop, set ratio, restart.
+    gm.toggleFastForward(0);
+    emu.isFastForward = speed > 1;
+    if (speed > 1) {
+      gm.setFastForwardRatio(speed);
+      setTimeout(() => gm.toggleFastForward(1), 10);
+    }
+    speedBtn.textContent = speed + "x";
+    speedBtn.classList.toggle("fast", speed > 1);
+  }
+
+  // Keep keyboard focus on the emulator so desktop controls keep working.
+  speedBtn.addEventListener("mousedown", e => e.preventDefault());
+  speedBtn.addEventListener("click", () => {
+    speedIndex = (speedIndex + 1) % SPEEDS.length;
+    applySpeed();
+    const emu = window.EJS_emulator;
+    if (emu && emu.elements && emu.elements.parent) emu.elements.parent.focus();
+  });
+
+  // The cores' web input layer only reads the mouse for the DS touchscreen, so
+  // finger input on the canvas is replayed as mouse events.
+  function bridgeTouchToMouse(canvas) {
+    let activeId = null;
+    const send = (type, t) => canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: t.clientX,
+      clientY: t.clientY,
+      screenX: t.screenX,
+      screenY: t.screenY,
+      button: 0,
+      buttons: type === "mouseup" ? 0 : 1
+    }));
+    const find = e => Array.prototype.find.call(e.changedTouches, t => t.identifier === activeId);
+    canvas.addEventListener("touchstart", e => {
+      if (activeId !== null) return;
+      const t = e.changedTouches[0];
+      activeId = t.identifier;
+      e.preventDefault();
+      send("mousemove", t);
+      send("mousedown", t);
+    }, { passive: false });
+    canvas.addEventListener("touchmove", e => {
+      const t = find(e);
+      if (!t) return;
+      e.preventDefault();
+      send("mousemove", t);
+    }, { passive: false });
+    const end = e => {
+      const t = find(e);
+      if (!t) return;
+      e.preventDefault();
+      send("mouseup", t);
+      activeId = null;
+    };
+    canvas.addEventListener("touchend", end, { passive: false });
+    canvas.addEventListener("touchcancel", end, { passive: false });
+  }
 
   try {
     const saved = localStorage.getItem("maikol-ds-core");
@@ -179,6 +293,17 @@
     window.EJS_threads = false;
     // The npm build ships unminified sources only; this makes loader.js load them directly.
     window.EJS_DEBUG_XX = true;
+    window.EJS_VirtualGamepadSettings = PHONE_LAYOUT;
+    // Speed is driven by the speed button only, so the menu can't get out of sync with it.
+    window.EJS_hideSettings = ["fastForward", "ff-ratio"];
+    window.EJS_onGameStart = () => {
+      document.body.classList.add("started");
+      speedIndex = 0;
+      applySpeed();
+      if (window.EJS_emulator.canvas) bridgeTouchToMouse(window.EJS_emulator.canvas);
+      // Ask the browser not to evict saves under storage pressure (granted mostly to installed apps).
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    };
 
     document.body.classList.add("playing");
     document.title = window.EJS_gameName + " — Maikol DS";
