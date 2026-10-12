@@ -32,6 +32,17 @@ Je ROM wordt nooit geüpload; die blijft lokaal in je browser.
 Op de telefoon tik je met je vinger op het onderste scherm; de knoppen staan eronder
 (L/R naast Select/Start, zodat ze het touchscreen niet afdekken).
 
+## Als het crasht
+
+Sluit iOS het tabblad af ("Er heeft zich herhaaldelijk een probleem voorgedaan"), dan
+toont de startpagina de volgende keer wanneer het misging (laden, opstarten of spelen),
+welk spel en hoe groot. Wat je kunt proberen:
+
+- **Compatibiliteitsmodus** aanvinken (WebGL 1 in plaats van WebGL 2).
+- **DeSmuME** kiezen in plaats van melonDS.
+- De site in **Safari zelf** openen, niet in de browser binnen een andere app.
+- Andere apps sluiten: grote spellen (128–512 MB) vragen veel geheugen.
+
 ## ROMs en BIOS
 
 - Er zitten **geen spellen** bij. Gebruik dumps van je eigen cartridges of homebrew.
@@ -64,7 +75,11 @@ wissen = saves kwijt. Exporteer ze via het menu als backup.
 
 ## Onderhoud
 
-- `tools/update-emulatorjs.sh [versie]` — haalt EmulatorJS en de cores opnieuw op van npm.
+- `tools/update-emulatorjs.sh [versie]` — haalt EmulatorJS en de cores opnieuw op van npm
+  en bouwt daarna de bundle.
+- `tools/build-emulatorjs-bundle.sh` — maakt `emulator/emulator.min.js` uit de bronbestanden
+  (npm levert geen geminificeerde versie; zonder bundle draait EmulatorJS in debug-modus,
+  wat merkbaar trager is).
 - `tools/make-test-rom.py` — bouwt een mini homebrew-ROM om emulatie te testen: rood
   scherm, groen bij A, blauw bij aanraken van het touchscreen, plus een frameteller
   bovenin om de snelheid te meten.

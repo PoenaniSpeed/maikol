@@ -81,6 +81,22 @@
     color: var(--text);
   }
   #error { color: #d64545; margin-top: 12px; display: none; }
+  label.check { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 14px; color: var(--muted); }
+  label.check input { margin-top: 3px; }
+  label.check strong { color: var(--text); font-weight: 500; }
+  #crash { display: none; border-color: #d64545; }
+  #crash h2 { font-size: 17px; margin: 0 0 6px; }
+  #crash p { margin: 6px 0; font-size: 14px; }
+  #crash ul { margin: 6px 0; padding-left: 20px; font-size: 14px; }
+  #crash button {
+    font: inherit;
+    margin-top: 8px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+  }
   details { color: var(--muted); font-size: 14px; }
   details summary { cursor: pointer; color: var(--text); }
   table { border-collapse: collapse; width: 100%; margin-top: 8px; }
@@ -123,6 +139,13 @@
   <h1>Maikol DS</h1>
   <p class="sub">Nintendo DS in je browser. Kies een eigen ROM-bestand om te beginnen.</p>
 
+  <section class="panel" id="crash" role="alert">
+    <h2>De vorige keer liep het vast</h2>
+    <p id="crash-detail"></p>
+    <ul id="crash-tips"></ul>
+    <button type="button" id="crash-close">Oké</button>
+  </section>
+
   <section class="panel">
     <label id="drop" for="rom">
       <strong>Kies een ROM-bestand</strong>
@@ -134,9 +157,13 @@
     <label class="row">
       Emulator-core
       <select id="core">
-        <option value="melonds">melonDS (nauwkeuriger, aanbevolen)</option>
-        <option value="desmume">DeSmuME (soms sneller op zwakke apparaten)</option>
+        <option value="melonds">melonDS (aanbevolen)</option>
+        <option value="desmume">DeSmuME (lichter)</option>
       </select>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="compat">
+      <span><strong>Compatibiliteitsmodus</strong><br>Gebruikt WebGL 1 in plaats van WebGL 2. Probeer dit als het spel crasht of een zwart scherm geeft.</span>
     </label>
     <div id="error"></div>
   </section>
@@ -259,13 +286,63 @@
     canvas.addEventListener("touchcancel", end, { passive: false });
   }
 
+  const compatBox = document.getElementById("compat");
   try {
     const saved = localStorage.getItem("maikol-ds-core");
     if (saved) coreSelect.value = saved;
+    compatBox.checked = localStorage.getItem("maikol-ds-compat") === "1";
   } catch (e) {}
   coreSelect.addEventListener("change", () => {
     try { localStorage.setItem("maikol-ds-core", coreSelect.value); } catch (e) {}
   });
+  compatBox.addEventListener("change", () => {
+    try { localStorage.setItem("maikol-ds-compat", compatBox.checked ? "1" : "0"); } catch (e) {}
+  });
+
+  // Crash breadcrumb: iOS kills a tab that runs out of memory without any error the page
+  // can catch, so the current stage is written down and cleared on a normal exit. If it
+  // is still there on the next visit, the previous session died at that stage.
+  const CRASH_KEY = "maikol-ds-session";
+  let session = null;
+  function track(update) {
+    session = Object.assign(session || {}, update);
+    try { localStorage.setItem(CRASH_KEY, JSON.stringify(session)); } catch (e) {}
+  }
+  function untrack() {
+    try { localStorage.removeItem(CRASH_KEY); } catch (e) {}
+  }
+  window.addEventListener("pagehide", untrack);
+  // Coming back from the back/forward cache resumes the same session.
+  window.addEventListener("pageshow", e => { if (e.persisted && session) track(session); });
+
+  (function showPreviousCrash() {
+    let last;
+    try { last = JSON.parse(localStorage.getItem(CRASH_KEY) || "null"); } catch (e) {}
+    untrack();
+    if (!last || !last.stage) return;
+    const mb = (last.size / 1048576).toFixed(0);
+    const stage = {
+      loading: "tijdens het laden van het spel",
+      started: "vlak na het opstarten van het spel",
+      playing: "tijdens het spelen"
+    }[last.stage] || last.stage;
+    const coreName = last.core === "desmume" ? "DeSmuME" : "melonDS";
+    document.getElementById("crash-detail").textContent =
+      `Gestopt ${stage}. Spel: ${last.name} (${mb} MB), core: ${coreName}` +
+      `${last.compat ? ", compatibiliteitsmodus aan" : ""}.`;
+    const tips = [];
+    if (last.stage === "loading" && last.size > 100 * 1048576) {
+      tips.push("Dit is een groot spel; je telefoon had waarschijnlijk te weinig geheugen. Sluit andere apps en tabbladen en probeer opnieuw.");
+    }
+    if (!last.compat) tips.push("Zet de compatibiliteitsmodus aan.");
+    if (last.core !== "desmume") tips.push("Kies DeSmuME als core.");
+    tips.push("Open de site in Safari zelf (niet in de browser binnen een andere app).");
+    const ul = document.getElementById("crash-tips");
+    tips.forEach(t => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+    const box = document.getElementById("crash");
+    box.style.display = "block";
+    document.getElementById("crash-close").addEventListener("click", () => { box.style.display = "none"; });
+  })();
 
   function showError(msg) {
     errorBox.textContent = msg;
@@ -291,13 +368,14 @@
     window.EJS_startOnLoaded = true;
     window.EJS_color = "#2f6fde";
     window.EJS_threads = false;
-    // The npm build ships unminified sources only; this makes loader.js load them directly.
-    window.EJS_DEBUG_XX = true;
+    window.EJS_forceLegacyCores = compatBox.checked;
     window.EJS_VirtualGamepadSettings = PHONE_LAYOUT;
     // Speed is driven by the speed button only, so the menu can't get out of sync with it.
     window.EJS_hideSettings = ["fastForward", "ff-ratio"];
     window.EJS_onGameStart = () => {
       document.body.classList.add("started");
+      track({ stage: "started" });
+      setTimeout(() => track({ stage: "playing" }), 15000);
       speedIndex = 0;
       applySpeed();
       if (window.EJS_emulator.canvas) bridgeTouchToMouse(window.EJS_emulator.canvas);
@@ -305,6 +383,7 @@
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     };
 
+    track({ stage: "loading", name: file.name, size: file.size, core: coreSelect.value, compat: compatBox.checked });
     document.body.classList.add("playing");
     document.title = window.EJS_gameName + " — Maikol DS";
 

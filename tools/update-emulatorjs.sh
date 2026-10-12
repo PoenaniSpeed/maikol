@@ -19,4 +19,5 @@ for core in melonds desmume; do
   cp package/*.data "$ROOT/emulator/cores/"
   cp package/reports/*.json "$ROOT/emulator/cores/reports/"
 done
+"$ROOT/tools/build-emulatorjs-bundle.sh"
 echo "EmulatorJS $VERSION vendored into $ROOT/emulator"
