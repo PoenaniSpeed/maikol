@@ -43,6 +43,16 @@ welk spel en hoe groot. Wat je kunt proberen:
 - De site in **Safari zelf** openen, niet in de browser binnen een andere app.
 - Andere apps sluiten: grote spellen (128–512 MB) vragen veel geheugen.
 
+Gemeten geheugengebruik met een ROM van 512 MB (zoals Pokémon Black 2 / White 2):
+
+| Core | Piek tijdens laden | Tijdens spelen |
+|---|---|---|
+| melonDS | ~1,8 GB | ~1,2 GB |
+| DeSmuME | ~1,3 GB | ~0,8 GB |
+
+melonDS houdt de ROM twee keer vast, DeSmuME één keer. Kies je op een telefoon een spel
+groter dan 256 MB met melonDS, dan stelt de site voor om naar DeSmuME over te schakelen.
+
 ## ROMs en BIOS
 
 - Er zitten **geen spellen** bij. Gebruik dumps van je eigen cartridges of homebrew.

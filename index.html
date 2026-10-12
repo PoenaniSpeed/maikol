@@ -360,6 +360,16 @@
       return;
     }
 
+    // Measured with a 512 MB ROM: melonDS peaks at ~1.8 GB (it keeps the ROM twice),
+    // DeSmuME at ~1.3 GB. Phones kill tabs well before desktops do.
+    const BIG_ROM = 256 * 1048576;
+    const isPhone = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (isPhone && file.size > BIG_ROM && coreSelect.value === "melonds" &&
+        window.confirm(`Dit spel is groot (${Math.round(file.size / 1048576)} MB). melonDS gebruikt daarvoor ongeveer 1,8 GB geheugen, wat op een telefoon vaak crasht. DeSmuME heeft ongeveer 1,3 GB nodig.\n\nOverschakelen naar DeSmuME?`)) {
+      coreSelect.value = "desmume";
+      try { localStorage.setItem("maikol-ds-core", "desmume"); } catch (e) {}
+    }
+
     window.EJS_player = "#game";
     window.EJS_core = coreSelect.value;
     window.EJS_gameUrl = file;
@@ -379,6 +389,14 @@
       speedIndex = 0;
       applySpeed();
       if (window.EJS_emulator.canvas) bridgeTouchToMouse(window.EJS_emulator.canvas);
+      // Both cores keep their own copy of the ROM once the game has loaded, so the
+      // filesystem's copy only costs memory (512 MB for the largest DS games).
+      setTimeout(() => {
+        try {
+          const emu = window.EJS_emulator;
+          emu.gameManager.FS.truncate("/" + emu.fileName, 0);
+        } catch (e) {}
+      }, 1000);
       // Ask the browser not to evict saves under storage pressure (granted mostly to installed apps).
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     };
