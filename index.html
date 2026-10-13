@@ -179,6 +179,10 @@
       <input type="checkbox" id="compat">
       <span><strong>Compatibiliteitsmodus</strong><br>Gebruikt WebGL 1 in plaats van WebGL 2. Probeer dit als het spel crasht of een zwart scherm geeft.</span>
     </label>
+    <label class="check">
+      <input type="checkbox" id="showfps">
+      <span><strong>FPS tonen</strong><br>Laat zien hoeveel beelden per seconde de emulator maakt (60 = volle snelheid).</span>
+    </label>
     <div id="error"></div>
   </section>
 
@@ -300,55 +304,99 @@
     if (emu && emu.elements && emu.elements.parent) emu.elements.parent.focus();
   });
 
-  // The cores' web input layer only reads the mouse for the DS touchscreen, so
-  // finger input on the canvas is replayed as mouse events.
+  // RetroArch multiplies pointer positions by devicePixelRatio, but EmulatorJS keeps the
+  // canvas buffer at CSS size, so on a 3x phone a tap landed three times too far from
+  // the corner (usually off the touchscreen). Scale positions so that position * dpr
+  // lands on the buffer pixel under the finger; this stays correct if the buffer is
+  // ever sized in device pixels (the factor then becomes 1).
+  function toCorePoint(canvas, clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    if (!r.width || !r.height) return { clientX, clientY };
+    // +0.5: the position is truncated to whole CSS pixels on the way in, so round instead.
+    return {
+      clientX: r.left + (clientX - r.left) * canvas.width / (r.width * dpr) + 0.5,
+      clientY: r.top + (clientY - r.top) * canvas.height / (r.height * dpr) + 0.5
+    };
+  }
+
+  // Same correction for a real mouse (high-DPI desktop screens): the original event is
+  // replaced by a scaled copy before the core's listeners see it.
+  function scaleMouseForCore(canvas) {
+    ["mousedown", "mousemove", "mouseup"].forEach(type => window.addEventListener(type, e => {
+      if (!e.isTrusted || e.target !== canvas) return;
+      const p = toCorePoint(canvas, e.clientX, e.clientY);
+      if (p.clientX === e.clientX && p.clientY === e.clientY) return;
+      e.stopImmediatePropagation();
+      canvas.dispatchEvent(new MouseEvent(type, {
+        bubbles: true, cancelable: true, view: window,
+        clientX: p.clientX, clientY: p.clientY, screenX: e.screenX, screenY: e.screenY,
+        button: e.button, buttons: e.buttons, movementX: e.movementX, movementY: e.movementY
+      }));
+    }, true));
+  }
+
+  // Finger input on the canvas is replayed as (scaled) mouse events. RetroArch also
+  // listens to touch itself, with the same devicePixelRatio error, and its touch
+  // position overrides the mouse one, so the touch events are stopped before they
+  // reach the canvas (window capture runs first).
   function bridgeTouchToMouse(canvas) {
     let activeId = null;
-    const send = (type, t) => canvas.dispatchEvent(new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: t.clientX,
-      clientY: t.clientY,
-      screenX: t.screenX,
-      screenY: t.screenY,
-      button: 0,
-      buttons: type === "mouseup" ? 0 : 1
-    }));
+    const send = (type, t) => {
+      const p = toCorePoint(canvas, t.clientX, t.clientY);
+      canvas.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: p.clientX,
+        clientY: p.clientY,
+        screenX: t.screenX,
+        screenY: t.screenY,
+        button: 0,
+        buttons: type === "mouseup" ? 0 : 1
+      }));
+    };
     const find = e => Array.prototype.find.call(e.changedTouches, t => t.identifier === activeId);
-    canvas.addEventListener("touchstart", e => {
+    const onCanvas = (type, handler) => window.addEventListener(type, e => {
+      if (e.target !== canvas) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      handler(e);
+    }, { capture: true, passive: false });
+    onCanvas("touchstart", e => {
       if (activeId !== null) return;
       const t = e.changedTouches[0];
       activeId = t.identifier;
-      e.preventDefault();
       send("mousemove", t);
       send("mousedown", t);
-    }, { passive: false });
-    canvas.addEventListener("touchmove", e => {
+    });
+    onCanvas("touchmove", e => {
       const t = find(e);
-      if (!t) return;
-      e.preventDefault();
-      send("mousemove", t);
-    }, { passive: false });
+      if (t) send("mousemove", t);
+    });
     const end = e => {
       const t = find(e);
       if (!t) return;
-      e.preventDefault();
       send("mouseup", t);
       activeId = null;
     };
-    canvas.addEventListener("touchend", end, { passive: false });
-    canvas.addEventListener("touchcancel", end, { passive: false });
+    onCanvas("touchend", end);
+    onCanvas("touchcancel", end);
   }
 
   const compatBox = document.getElementById("compat");
+  const fpsBox = document.getElementById("showfps");
   try {
+    fpsBox.checked = localStorage.getItem("maikol-ds-fps") === "1";
     const saved = localStorage.getItem("maikol-ds-core");
     if (saved) coreSelect.value = saved;
     compatBox.checked = localStorage.getItem("maikol-ds-compat") === "1";
   } catch (e) {}
   coreSelect.addEventListener("change", () => {
     try { localStorage.setItem("maikol-ds-core", coreSelect.value); } catch (e) {}
+  });
+  fpsBox.addEventListener("change", () => {
+    try { localStorage.setItem("maikol-ds-fps", fpsBox.checked ? "1" : "0"); } catch (e) {}
   });
   compatBox.addEventListener("change", () => {
     try { localStorage.setItem("maikol-ds-compat", compatBox.checked ? "1" : "0"); } catch (e) {}
@@ -471,6 +519,16 @@
     window.EJS_color = "#2f6fde";
     window.EJS_threads = false;
     window.EJS_forceLegacyCores = compatBox.checked;
+    window.EJS_defaultOptions = {
+      // Absolute stylus position. The default "mouse" modes move a cursor by relative
+      // motion, which a finger (or the touch-to-mouse bridge) never produces, so every
+      // tap landed on the top-left corner.
+      melonds_touch_mode: "Touch",
+      desmume_pointer_type: "touch",
+      // Pointer lock on click would freeze the absolute stylus position on desktop.
+      lockMouse: "disabled",
+      fps: fpsBox.checked ? "show" : "hide"
+    };
     window.EJS_VirtualGamepadSettings = PHONE_LAYOUT;
     // Speed is driven by the speed button only, so the menu can't get out of sync with it.
     window.EJS_hideSettings = ["fastForward", "ff-ratio"];
@@ -481,7 +539,10 @@
       setTimeout(() => track({ stage: "playing" }), 15000);
       speedIndex = 0;
       applySpeed();
-      if (window.EJS_emulator.canvas) bridgeTouchToMouse(window.EJS_emulator.canvas);
+      if (window.EJS_emulator.canvas) {
+        bridgeTouchToMouse(window.EJS_emulator.canvas);
+        scaleMouseForCore(window.EJS_emulator.canvas);
+      }
       // Both cores keep their own copy of the ROM once the game has loaded, so the
       // filesystem's copy only costs memory (512 MB for the largest DS games).
       setTimeout(() => {

@@ -32,7 +32,14 @@ Je ROM wordt nooit geüpload; die blijft lokaal in je browser.
 Op de telefoon tik je met je vinger op het onderste scherm; de knoppen staan eronder
 (L/R naast Select/Start, zodat ze het touchscreen niet afdekken).
 
-## Als het crasht
+Op een iPhone verschijnt na het laden **"▶ Tik om te spelen"**: Safari start geluid pas na
+een tik, en de emulator staat stil zolang het geluid stilstaat.
+
+## Als het crasht of wit blijft
+
+- **Wit scherm zonder geluid:** tik op het scherm (of op "Tik om te spelen").
+- **FPS tonen** aanvinken laat zien of de emulator draait (60 = volle snelheid). Draait hij
+  op 60 en blijft het scherm wit, dan hangt het spel zelf: probeer de andere core.
 
 Sluit iOS het tabblad af ("Er heeft zich herhaaldelijk een probleem voorgedaan"), dan
 toont de startpagina de volgende keer wanneer het misging (laden, opstarten of spelen),
@@ -90,9 +97,9 @@ wissen = saves kwijt. Exporteer ze via het menu als backup.
 - `tools/build-emulatorjs-bundle.sh` — maakt `emulator/emulator.min.js` uit de bronbestanden
   (npm levert geen geminificeerde versie; zonder bundle draait EmulatorJS in debug-modus,
   wat merkbaar trager is).
-- `tools/make-test-rom.py` — bouwt een mini homebrew-ROM om emulatie te testen: rood
-  scherm, groen bij A, blauw bij aanraken van het touchscreen, plus een frameteller
-  bovenin om de snelheid te meten.
+- `tools/make-test-rom.py` — bouwt een homebrew-test-ROM: frameteller (snelheid),
+  ruwe touchscreen-X/Y (klopt de vingerpositie?), een cartridge-leestest die elke frame
+  draait, en een achtergrond die groen wordt bij A en blauw bij aanraken.
 
 ## Licentie
 
