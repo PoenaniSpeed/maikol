@@ -349,14 +349,51 @@
     errorBox.style.display = "block";
   }
 
-  function start(file) {
+  // Reads the cartridge header (first 512 bytes) to catch damaged or incompletely
+  // copied files, which otherwise just boot to a white screen.
+  async function inspectRom(file) {
+    if (!/\.(nds|srl)$/i.test(file.name) || file.size < 0x200) return null;
+    const bytes = new Uint8Array(await file.slice(0, 0x200).arrayBuffer());
+    const view = new DataView(bytes.buffer);
+    let crc = 0xFFFF;
+    for (let i = 0; i < 0x15E; i++) {
+      crc ^= bytes[i];
+      for (let b = 0; b < 8; b++) crc = (crc & 1) ? (crc >>> 1) ^ 0xA001 : crc >>> 1;
+    }
+    const text = (from, len) => String.fromCharCode(...bytes.subarray(from, from + len)).replace(/\0[\s\S]*$/, "").trim();
+    const dsiEnhanced = (bytes[0x12] & 0x02) !== 0;
+    return {
+      title: text(0, 12),
+      code: text(0x0C, 4),
+      headerOk: crc === view.getUint16(0x15E, true),
+      // Bytes the game actually uses; DSi-enhanced games store the larger total at 0x210.
+      used: Math.max(view.getUint32(0x80, true), dsiEnhanced ? view.getUint32(0x210, true) : 0)
+    };
+  }
+
+  async function start(file) {
     if (!file) return;
+    errorBox.style.display = "none";
     if (!VALID.test(file.name)) {
       showError("Dit lijkt geen DS-ROM. Kies een .nds-, .zip- of .7z-bestand.");
       return;
     }
     if (!window.isSecureContext && location.protocol === "file:") {
       showError("Open deze pagina via een webserver (zie README), niet direct als bestand.");
+      return;
+    }
+
+    let rom = null;
+    try { rom = await inspectRom(file); } catch (e) {}
+    const mb = n => Math.round(n / 1048576);
+    if (rom && !rom.headerOk &&
+        !window.confirm("Het begin van dit bestand klopt niet: het is geen geldige DS-ROM of het is beschadigd. Het spel start dan meestal niet (wit scherm).\n\nToch proberen?")) {
+      showError("Gestopt: het ROM-bestand lijkt beschadigd. Haal het opnieuw op.");
+      return;
+    }
+    if (rom && rom.headerOk && file.size < rom.used &&
+        !window.confirm(`Dit bestand is onvolledig: ${mb(file.size)} MB van de ${mb(rom.used)} MB die het spel nodig heeft. Waarschijnlijk is het downloaden of kopiëren niet afgemaakt. Het spel start dan meestal niet (wit scherm).\n\nToch proberen?`)) {
+      showError(`Gestopt: het bestand is onvolledig (${mb(file.size)} van ${mb(rom.used)} MB). Download of kopieer het opnieuw.`);
       return;
     }
 
@@ -401,7 +438,8 @@
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     };
 
-    track({ stage: "loading", name: file.name, size: file.size, core: coreSelect.value, compat: compatBox.checked });
+    track({ stage: "loading", name: file.name, size: file.size, core: coreSelect.value, compat: compatBox.checked,
+            title: rom ? rom.title + " (" + rom.code + ")" : null });
     document.body.classList.add("playing");
     document.title = window.EJS_gameName + " — Maikol DS";
 
