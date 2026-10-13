@@ -132,6 +132,20 @@
   }
   #speed.fast { background: rgba(47, 111, 222, .85); border-color: transparent; }
   body.started #speed { display: block; }
+  #tap-to-play {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    border: 0;
+    background: rgba(0, 0, 0, .55);
+    color: #fff;
+    font: 600 22px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #tap-to-play span { display: inline-block; padding: 14px 24px; border-radius: 28px; background: #2f6fde; }
+  #tap-to-play.show { display: block; }
 </style>
 </head>
 <body>
@@ -194,6 +208,7 @@
 
 <div id="game-wrap"><div id="game"></div></div>
 <button id="speed" type="button" aria-label="Spelsnelheid">1x</button>
+<button id="tap-to-play" type="button"><span>▶ Tik om te spelen</span></button>
 
 <script>
 (function () {
@@ -202,6 +217,46 @@
   const coreSelect = document.getElementById("core");
   const errorBox = document.getElementById("error");
   const VALID = /\.(nds|srl|zip|7z)$/i;
+  // The cores sync emulation to audio, so a suspended AudioContext freezes the game on
+  // its first (white) frame. Safari only starts a context inside a tap, and the cores
+  // create theirs after loading finishes, long after the tap that picked the file.
+  // Emscripten's own unlock listens once for touchstart, which WebKit doesn't accept
+  // as a gesture, so every context is tracked here and resumed on gestures it does accept.
+  const audioContexts = [];
+  (function trackAudioContexts() {
+    const Original = window.AudioContext || window.webkitAudioContext;
+    if (!Original) return;
+    const Tracked = function (...args) {
+      const ctx = new Original(...args);
+      audioContexts.push(ctx);
+      return ctx;
+    };
+    Tracked.prototype = Original.prototype;
+    window.AudioContext = Tracked;
+    if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  })();
+  const audioBlocked = () => audioContexts.some(c => c.state === "suspended" || c.state === "interrupted");
+  function resumeAudio() {
+    audioContexts.forEach(c => {
+      if (c.state === "suspended" || c.state === "interrupted") c.resume().catch(() => {});
+    });
+  }
+  ["touchend", "click", "keydown", "pointerup"].forEach(ev => window.addEventListener(ev, resumeAudio, true));
+
+  const tapToPlay = document.getElementById("tap-to-play");
+  let blockedSince = 0;
+  function watchAudio() {
+    // Shown after a short delay so a context that is merely starting up doesn't flash it.
+    const blocked = audioBlocked();
+    blockedSince = blocked ? (blockedSince || Date.now()) : 0;
+    tapToPlay.classList.toggle("show", blocked && Date.now() - blockedSince > 400);
+  }
+  tapToPlay.addEventListener("click", () => {
+    resumeAudio();
+    const emu = window.EJS_emulator;
+    if (emu && emu.elements && emu.elements.parent) emu.elements.parent.focus();
+  });
+
   const SPEEDS = [1, 2, 4];
   const speedBtn = document.getElementById("speed");
   let speedIndex = 0;
@@ -420,6 +475,7 @@
     // Speed is driven by the speed button only, so the menu can't get out of sync with it.
     window.EJS_hideSettings = ["fastForward", "ff-ratio"];
     window.EJS_onGameStart = () => {
+      setInterval(watchAudio, 250);
       document.body.classList.add("started");
       track({ stage: "started" });
       setTimeout(() => track({ stage: "playing" }), 15000);
