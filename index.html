@@ -474,6 +474,50 @@
     };
   }
 
+  // melonDS gets the ROM through RetroArch, which copies it into emulator memory, after
+  // which melonDS copies it once more. With the page's own copy that is three copies:
+  // 1.8 GB for a 512 MB game, more than iOS allows a tab. For large ROMs the page instead
+  // writes the file in 8 MB pieces straight into emulator memory and answers the core's
+  // reads from there. Once a reader has gone through the whole file and closes it, the
+  // block is freed, so melonDS's own copy reuses that space instead of growing memory.
+  let releaseHeapRom = () => {};
+  async function serveRomFromHeap(emu, file) {
+    const M = emu.gameManager.Module;
+    const FS = emu.gameManager.FS;
+    const size = file.size;
+    // The slack is never written, so it costs address space, not memory. It is there
+    // because melonDS makes many small allocations (RAM, video, sound) between this
+    // block being freed and allocating its ROM copy, and those are carved out of the
+    // freed block; without room to spare the copy no longer fits and memory grows.
+    let ptr = M._malloc(size + (128 << 20));
+    if (!ptr) throw new Error("out of emulator memory");
+    releaseHeapRom = () => { if (ptr) { M._free(ptr); ptr = 0; } };
+    const CHUNK = 8 << 20;
+    for (let off = 0; off < size; off += CHUNK) {
+      const piece = new Uint8Array(await file.slice(off, Math.min(size, off + CHUNK)).arrayBuffer());
+      M.HEAPU8.set(piece, ptr + off);  // HEAPU8 is re-read: growing memory replaces it
+    }
+    const node = FS.lookupPath("/" + emu.fileName).node;
+    node.contents = new Uint8Array(0);
+    node.usedBytes = size;
+    node.stream_ops = Object.assign({}, node.stream_ops, {
+      read(stream, buffer, offset, length, position) {
+        if (!ptr || position >= size) return 0;
+        const n = Math.min(size - position, length);
+        if (buffer.buffer === M.HEAPU8.buffer) {
+          M.HEAPU8.copyWithin(buffer.byteOffset + offset, ptr + position, ptr + position + n);
+        } else {
+          buffer.set(M.HEAPU8.subarray(ptr + position, ptr + position + n), offset);
+        }
+        if (position + n >= size) stream.readToEnd = true;
+        return n;
+      },
+      close(stream) {
+        if (stream.readToEnd) releaseHeapRom();
+      }
+    });
+  }
+
   async function start(file) {
     if (!file) return;
     errorBox.style.display = "none";
@@ -500,19 +544,27 @@
       return;
     }
 
-    // Measured with a 512 MB ROM: melonDS peaks at ~1.8 GB (it keeps the ROM twice),
-    // DeSmuME at ~1.3 GB. Phones kill tabs well before desktops do.
-    const BIG_ROM = 256 * 1048576;
-    const isPhone = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-    if (isPhone && file.size > BIG_ROM && coreSelect.value === "melonds" &&
-        window.confirm(`Dit spel is groot (${Math.round(file.size / 1048576)} MB). melonDS gebruikt daarvoor ongeveer 1,8 GB geheugen, wat op een telefoon vaak crasht. DeSmuME heeft ongeveer 1,3 GB nodig.\n\nOverschakelen naar DeSmuME?`)) {
-      coreSelect.value = "desmume";
-      try { localStorage.setItem("maikol-ds-core", "desmume"); } catch (e) {}
-    }
-
     window.EJS_player = "#game";
     window.EJS_core = coreSelect.value;
-    window.EJS_gameUrl = file;
+    const BIG_FOR_MELONDS = 256 * 1048576;
+    const heapRom = coreSelect.value === "melonds" && /\.(nds|srl)$/i.test(file.name) && file.size > BIG_FOR_MELONDS;
+    if (heapRom) {
+      // EmulatorJS gets a stand-in with the header only; the real data goes through
+      // serveRomFromHeap right before the core starts.
+      window.EJS_gameUrl = new File([await file.slice(0, 0x200).arrayBuffer()], file.name);
+      window.EJS_ready = () => {
+        const emu = window.EJS_emulator;
+        const startGame = emu.startGame.bind(emu);
+        emu.startGame = () => {
+          serveRomFromHeap(emu, file).catch(async () => {
+            releaseHeapRom();
+            emu.gameManager.FS.writeFile("/" + emu.fileName, new Uint8Array(await file.arrayBuffer()), { canOwn: true });
+          }).then(startGame);
+        };
+      };
+    } else {
+      window.EJS_gameUrl = file;
+    }
     window.EJS_gameName = file.name.replace(/\.[^.]+$/, "");
     window.EJS_pathtodata = "emulator/";
     window.EJS_startOnLoaded = true;
@@ -548,6 +600,7 @@
       setTimeout(() => {
         try {
           const emu = window.EJS_emulator;
+          releaseHeapRom();
           emu.gameManager.FS.truncate("/" + emu.fileName, 0);
         } catch (e) {}
       }, 1000);

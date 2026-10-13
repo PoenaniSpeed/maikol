@@ -54,11 +54,12 @@ Gemeten geheugengebruik met een ROM van 512 MB (zoals Pokémon Black 2 / White 2
 
 | Core | Piek tijdens laden | Tijdens spelen |
 |---|---|---|
-| melonDS | ~1,8 GB | ~1,2 GB |
+| melonDS | ~1,3 GB | ~1,2 GB |
 | DeSmuME | ~1,3 GB | ~0,8 GB |
 
-melonDS houdt de ROM twee keer vast, DeSmuME één keer. Kies je op een telefoon een spel
-groter dan 256 MB met melonDS, dan stelt de site voor om naar DeSmuME over te schakelen.
+melonDS (via RetroArch) houdt de ROM twee keer vast. Voor ROM's boven 256 MB schrijft de
+site het bestand daarom in stukjes direct in het emulatorgeheugen en geeft dat blok vrij
+zodra het is ingelezen, zodat melonDS de ruimte hergebruikt (eerst was de piek ~1,8 GB).
 
 ## ROMs en BIOS
 
